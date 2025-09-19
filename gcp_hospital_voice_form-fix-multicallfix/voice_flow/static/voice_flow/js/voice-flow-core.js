@@ -54,12 +54,681 @@ let connectionTimeoutId = null;
 let lastProcessedUserResponseTimestamp = 0;
 let recentToolCalls = new Map();
 
+// Web Speech API state
+let speechRecognition = null;
+let isSpeechRecognitionActive = false;
+let currentLiveTranscript = '';
+let liveTranscriptElement = null;
+let speechRecognitionSupported = false;
+let speechRecognitionTimeout = null;
+let lastSpeechRecognitionResult = '';
+let speechRecognitionStartTime = null;
+let speechRecognitionConfidenceThreshold = 0.7; // Minimum confidence for accepting results
+let speechRecognitionMaxAlternatives = 3; // Get multiple alternatives for better accuracy
+let speechRecognitionRestartTimeout = null;
+let consecutiveLowConfidenceCount = 0;
+let lastProcessedTranscriptTime = 0;
+let speechRecognitionOptimizationEnabled = true;
+
 const USER_RESPONSE_DEDUP_THRESHOLD_MS = 2000;
 const CONVERSATION_TIMEOUT_MS = 30000;
 const MAX_RECONNECT_ATTEMPTS = 100;
 const RECONNECT_BASE_DELAY_MS = 3500;
 const RECOVERY_STORAGE_KEY = 'voice_flow_recovery_session';
 const CONNECTION_TIMEOUT_MS = 10000;
+
+// Web Speech API Functions
+const initializeSpeechRecognition = () => {
+    // Check if Web Speech API is supported
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        console.warn('Web Speech API not supported in this browser');
+        speechRecognitionSupported = false;
+        return false;
+    }
+    
+    speechRecognitionSupported = true;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    speechRecognition = new SpeechRecognition();
+    
+    // Enhanced configuration for better accuracy
+    speechRecognition.continuous = true;
+    speechRecognition.interimResults = true;
+    speechRecognition.lang = 'en-US';
+    speechRecognition.maxAlternatives = speechRecognitionMaxAlternatives;
+    
+    // Additional optimization settings
+    if (speechRecognitionOptimizationEnabled) {
+        // Try to set additional properties if available
+        if ('grammars' in speechRecognition) {
+            // Could add medical terminology grammars here
+        }
+        if ('serviceURI' in speechRecognition) {
+            // Use Google's enhanced speech service if available
+            speechRecognition.serviceURI = 'wss://www.google.com/speech-api/v2/recognize';
+        }
+    }
+    
+    // Event handlers
+    speechRecognition.onstart = () => {
+        console.log('Speech recognition started');
+        isSpeechRecognitionActive = true;
+        speechRecognitionStartTime = Date.now();
+        updateLiveTranscriptUI('listening', 'Listening...');
+    };
+    
+    speechRecognition.onresult = (event) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+        let bestInterimConfidence = 0;
+        let bestFinalConfidence = 0;
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            const isFinal = result.isFinal;
+            
+            // Get the best alternative based on confidence
+            let bestAlternative = result[0];
+            let bestConfidence = bestAlternative.confidence || 0.8; // Default confidence if not provided
+            
+            // Check all alternatives for better accuracy
+            for (let j = 0; j < Math.min(result.length, speechRecognitionMaxAlternatives); j++) {
+                const alternative = result[j];
+                const confidence = alternative.confidence || 0.8;
+                
+                if (confidence > bestConfidence) {
+                    bestAlternative = alternative;
+                    bestConfidence = confidence;
+                }
+            }
+            
+            const transcript = bestAlternative.transcript;
+            
+            if (isFinal) {
+                finalTranscript += transcript;
+                bestFinalConfidence = Math.max(bestFinalConfidence, bestConfidence);
+            } else {
+                interimTranscript += transcript;
+                bestInterimConfidence = Math.max(bestInterimConfidence, bestConfidence);
+            }
+        }
+        
+        // Update live transcript display with confidence indicators
+        if (interimTranscript && bestInterimConfidence >= speechRecognitionConfidenceThreshold * 0.6) {
+            currentLiveTranscript = interimTranscript;
+            updateLiveTranscriptUI('interim', interimTranscript, bestInterimConfidence);
+        } else if (interimTranscript) {
+            // Show low confidence interim results with different styling
+            updateLiveTranscriptUI('low-confidence', interimTranscript, bestInterimConfidence);
+        }
+        
+        if (finalTranscript && bestFinalConfidence >= speechRecognitionConfidenceThreshold) {
+            currentLiveTranscript = finalTranscript;
+            updateLiveTranscriptUI('final', finalTranscript, bestFinalConfidence);
+            
+            // Reset low confidence counter on good result
+            consecutiveLowConfidenceCount = 0;
+            
+            // Process the final transcript
+            processSpeechRecognitionResult(finalTranscript, bestFinalConfidence);
+        } else if (finalTranscript) {
+            // Handle low confidence final results
+            consecutiveLowConfidenceCount++;
+            console.log(`Low confidence final result (${bestFinalConfidence.toFixed(2)}): "${finalTranscript}"`);
+            
+            // If we get too many low confidence results, restart speech recognition
+            if (consecutiveLowConfidenceCount >= 3) {
+                console.log('Too many low confidence results, restarting speech recognition');
+                restartSpeechRecognition();
+                consecutiveLowConfidenceCount = 0;
+            }
+        }
+    };
+    
+    speechRecognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        isSpeechRecognitionActive = false;
+        
+        switch (event.error) {
+            case 'no-speech':
+                updateLiveTranscriptUI('error', 'No speech detected. Please speak clearly.');
+                break;
+            case 'audio-capture':
+                updateLiveTranscriptUI('error', 'Microphone not accessible. Please check permissions.');
+                break;
+            case 'not-allowed':
+                updateLiveTranscriptUI('error', 'Microphone permission denied.');
+                break;
+            case 'network':
+                updateLiveTranscriptUI('error', 'Network error occurred. Retrying...');
+                break;
+            case 'aborted':
+                console.log('Speech recognition aborted (likely intentional)');
+                return; // Don't restart if intentionally aborted
+            case 'service-not-allowed':
+                updateLiveTranscriptUI('error', 'Speech service not allowed. Using server transcription.');
+                speechRecognitionSupported = false;
+                return;
+            default:
+                updateLiveTranscriptUI('error', 'Speech recognition error occurred.');
+        }
+        
+        // Restart speech recognition after a short delay with exponential backoff
+        const restartDelay = Math.min(1000 * Math.pow(1.5, consecutiveLowConfidenceCount), 5000);
+        setTimeout(() => {
+            if (isRecording && !isSpeechRecognitionActive && speechRecognitionSupported) {
+                console.log(`Restarting speech recognition after ${restartDelay}ms delay`);
+                startSpeechRecognition();
+            }
+        }, restartDelay);
+    };
+    
+    speechRecognition.onend = () => {
+        console.log('Speech recognition ended');
+        isSpeechRecognitionActive = false;
+        
+        // Restart if still recording and not manually stopped
+        if (isRecording && speechRecognitionSupported) {
+            // Use a shorter delay for natural end vs error restart
+            const restartDelay = 100;
+            speechRecognitionRestartTimeout = setTimeout(() => {
+                if (isRecording && !isSpeechRecognitionActive && speechRecognitionSupported) {
+                    console.log('Auto-restarting speech recognition after natural end');
+                    startSpeechRecognition();
+                }
+            }, restartDelay);
+        }
+    };
+    
+    return true;
+};
+
+const restartSpeechRecognition = () => {
+    console.log('Manually restarting speech recognition...');
+    stopSpeechRecognition();
+    
+    // Clear any pending restart timeout
+    if (speechRecognitionRestartTimeout) {
+        clearTimeout(speechRecognitionRestartTimeout);
+        speechRecognitionRestartTimeout = null;
+    }
+    
+    // Restart after a brief delay
+    setTimeout(() => {
+        if (isRecording && speechRecognitionSupported) {
+            startSpeechRecognition();
+        }
+    }, 200);
+};
+
+const startSpeechRecognition = () => {
+    if (!speechRecognitionSupported || !speechRecognition || isSpeechRecognitionActive) {
+        console.log('Speech recognition not ready to start:', {
+            supported: speechRecognitionSupported,
+            exists: !!speechRecognition,
+            active: isSpeechRecognitionActive
+        });
+        return;
+    }
+    
+    try {
+        console.log('Starting speech recognition with enhanced settings...');
+        speechRecognition.start();
+        
+        // Set a timeout to detect if speech recognition gets stuck
+        speechRecognitionTimeout = setTimeout(() => {
+            if (isSpeechRecognitionActive && !currentLiveTranscript) {
+                console.log('Speech recognition appears stuck, restarting...');
+                restartSpeechRecognition();
+            }
+        }, 10000); // 10 second timeout
+        
+    } catch (error) {
+        console.error('Failed to start speech recognition:', error);
+        
+        // Try again after a delay with exponential backoff
+        const retryDelay = Math.min(1000 * Math.pow(1.5, consecutiveLowConfidenceCount), 5000);
+        setTimeout(() => {
+            if (isRecording && !isSpeechRecognitionActive && speechRecognitionSupported) {
+                console.log(`Retrying speech recognition start after ${retryDelay}ms`);
+                startSpeechRecognition();
+            }
+        }, retryDelay);
+    }
+};
+
+const stopSpeechRecognition = () => {
+    console.log('Stopping speech recognition...');
+    
+    // Clear any pending timeouts
+    if (speechRecognitionTimeout) {
+        clearTimeout(speechRecognitionTimeout);
+        speechRecognitionTimeout = null;
+    }
+    
+    if (speechRecognitionRestartTimeout) {
+        clearTimeout(speechRecognitionRestartTimeout);
+        speechRecognitionRestartTimeout = null;
+    }
+    
+    if (speechRecognition && isSpeechRecognitionActive) {
+        try {
+            speechRecognition.stop();
+            console.log('Speech recognition stopped successfully');
+        } catch (error) {
+            console.error('Error stopping speech recognition:', error);
+            // Force abort if stop fails
+            try {
+                speechRecognition.abort();
+            } catch (abortError) {
+                console.error('Error aborting speech recognition:', abortError);
+            }
+        }
+    }
+    
+    isSpeechRecognitionActive = false;
+    currentLiveTranscript = '';
+    consecutiveLowConfidenceCount = 0;
+    updateLiveTranscriptUI('stopped', '');
+};
+
+const processSpeechRecognitionResult = (transcript, confidence = 0.8) => {
+    const trimmedTranscript = transcript.trim();
+    const currentTime = Date.now();
+    
+    // Enhanced filtering for better accuracy
+    if (!trimmedTranscript || trimmedTranscript === lastSpeechRecognitionResult) {
+        console.log('Skipping duplicate or empty transcript');
+        return;
+    }
+    
+    // Rate limiting to prevent too frequent processing
+    if (currentTime - lastProcessedTranscriptTime < 500) {
+        console.log('Rate limiting: too soon after last transcript');
+        return;
+    }
+    
+    // Filter out very short or likely irrelevant transcripts
+    if (trimmedTranscript.length < 2) {
+        console.log('Skipping very short transcript:', trimmedTranscript);
+        return;
+    }
+    
+    // Filter out common false positives
+    const falsePositives = ['uh', 'um', 'ah', 'er', 'mm', 'hmm', 'okay', 'yes', 'no', 'the', 'a', 'an', 'and', 'or', 'but'];
+    if (falsePositives.includes(trimmedTranscript.toLowerCase())) {
+        console.log('Skipping likely false positive:', trimmedTranscript);
+        return;
+    }
+    
+    lastSpeechRecognitionResult = trimmedTranscript;
+    lastProcessedTranscriptTime = currentTime;
+    
+    console.log(`Processing transcript (confidence: ${confidence.toFixed(2)}): "${trimmedTranscript}"`);
+    
+    // Check if this is a valid user response
+    if (isValidUserResponse(trimmedTranscript)) {
+        // Add to conversation messages
+        addMessageToConversation('user', trimmedTranscript);
+        
+        // Send to WebSocket for processing
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ 
+                type: 'text', 
+                text: trimmedTranscript,
+                confidence: confidence,
+                source: 'web-speech-api'
+            }));
+        }
+        
+        // Clear the live transcript after processing
+        setTimeout(() => {
+            currentLiveTranscript = '';
+            updateLiveTranscriptUI('processed', '');
+        }, 1000);
+    } else {
+        // Invalid response - show error in live transcript
+        updateLiveTranscriptUI('error', 'Please speak more clearly');
+        setTimeout(() => {
+            updateLiveTranscriptUI('listening', 'Listening...');
+        }, 2000);
+    }
+};
+
+// Fallback mechanism when Web Speech API is not available
+const showWebSpeechAPIFallback = () => {
+    const transcriptDiv = document.getElementById('transcript');
+    if (!transcriptDiv) return;
+    
+    const fallbackElement = document.createElement('div');
+    fallbackElement.id = 'web-speech-fallback';
+    fallbackElement.className = 'web-speech-fallback';
+    fallbackElement.innerHTML = `
+        <div class="fallback-content">
+            <div class="fallback-icon">🎤</div>
+            <div class="fallback-text">
+                <strong>Live Transcription Unavailable</strong>
+                <p>Your browser doesn't support live speech recognition. Audio will still be processed by the server.</p>
+            </div>
+        </div>
+    `;
+    
+    transcriptDiv.appendChild(fallbackElement);
+    
+    // Add fallback styles
+    const style = document.createElement('style');
+    style.id = 'web-speech-fallback-styles';
+    style.textContent = `
+        .web-speech-fallback {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 12px 16px;
+            margin: 8px 0;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        .fallback-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .fallback-icon {
+            font-size: 20px;
+            opacity: 0.8;
+        }
+        
+        .fallback-text {
+            flex: 1;
+        }
+        
+        .fallback-text strong {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        
+        .fallback-text p {
+            margin: 0;
+            font-size: 12px;
+            opacity: 0.9;
+            line-height: 1.4;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    `;
+    
+    if (!document.getElementById('web-speech-fallback-styles')) {
+        document.head.appendChild(style);
+    }
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        if (fallbackElement && fallbackElement.parentNode) {
+            fallbackElement.style.animation = 'fadeOut 0.5s ease-out forwards';
+            setTimeout(() => {
+                if (fallbackElement && fallbackElement.parentNode) {
+                    fallbackElement.remove();
+                }
+            }, 500);
+        }
+    }, 5000);
+    
+    // Add fadeOut animation
+    const fadeOutStyle = document.createElement('style');
+    fadeOutStyle.textContent = `
+        @keyframes fadeOut {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(-10px); }
+        }
+    `;
+    document.head.appendChild(fadeOutStyle);
+};
+
+const updateLiveTranscriptUI = (status, text, confidence = 0.8) => {
+    if (!liveTranscriptElement) {
+        createLiveTranscriptElement();
+    }
+    
+    if (!liveTranscriptElement) return;
+    
+    // Clear previous classes
+    liveTranscriptElement.className = 'live-transcript';
+    
+    // Add confidence indicator
+    const confidencePercent = Math.round(confidence * 100);
+    const confidenceIndicator = confidence < 0.6 ? '⚠️' : confidence < 0.8 ? '⚡' : '✅';
+    
+    switch (status) {
+        case 'listening':
+            liveTranscriptElement.classList.add('listening');
+            liveTranscriptElement.innerHTML = `
+                <div class="live-transcript-content">
+                    <div class="live-transcript-indicator">
+                        <span class="live-transcript-icon">🎤</span>
+                        <span class="live-transcript-text">Listening...</span>
+                    </div>
+                </div>
+            `;
+            break;
+        case 'interim':
+            liveTranscriptElement.classList.add('interim');
+            liveTranscriptElement.innerHTML = `
+                <div class="live-transcript-content">
+                    <div class="live-transcript-indicator">
+                        <span class="live-transcript-icon">⚡</span>
+                        <span class="live-transcript-text">${text}</span>
+                        <span class="confidence-indicator">${confidenceIndicator} ${confidencePercent}%</span>
+                    </div>
+                </div>
+            `;
+            break;
+        case 'low-confidence':
+            liveTranscriptElement.classList.add('low-confidence');
+            liveTranscriptElement.innerHTML = `
+                <div class="live-transcript-content">
+                    <div class="live-transcript-indicator">
+                        <span class="live-transcript-icon">⚠️</span>
+                        <span class="live-transcript-text">${text}</span>
+                        <span class="confidence-indicator">${confidenceIndicator} ${confidencePercent}%</span>
+                    </div>
+                </div>
+            `;
+            break;
+        case 'final':
+            liveTranscriptElement.classList.add('final');
+            liveTranscriptElement.innerHTML = `
+                <div class="live-transcript-content">
+                    <div class="live-transcript-indicator">
+                        <span class="live-transcript-icon">✅</span>
+                        <span class="live-transcript-text">${text}</span>
+                        <span class="confidence-indicator">${confidenceIndicator} ${confidencePercent}%</span>
+                    </div>
+                </div>
+            `;
+            break;
+        case 'error':
+            liveTranscriptElement.classList.add('error');
+            liveTranscriptElement.innerHTML = `
+                <div class="live-transcript-content">
+                    <div class="live-transcript-indicator">
+                        <span class="live-transcript-icon">❌</span>
+                        <span class="live-transcript-text">${text}</span>
+                    </div>
+                </div>
+            `;
+            break;
+        case 'processed':
+            liveTranscriptElement.classList.add('processed');
+            liveTranscriptElement.innerHTML = `
+                <div class="live-transcript-content">
+                    <div class="live-transcript-indicator">
+                        <span class="live-transcript-icon">✅</span>
+                        <span class="live-transcript-text">Processed</span>
+                    </div>
+                </div>
+            `;
+            break;
+        case 'stopped':
+            liveTranscriptElement.classList.add('stopped');
+            liveTranscriptElement.innerHTML = '';
+            break;
+        default:
+            liveTranscriptElement.innerHTML = `
+                <div class="live-transcript-content">
+                    <div class="live-transcript-indicator">
+                        <span class="live-transcript-text">${text}</span>
+                    </div>
+                </div>
+            `;
+    }
+};
+
+const createLiveTranscriptElement = () => {
+    // Find the transcript container
+    const transcriptDiv = document.getElementById('transcript');
+    if (!transcriptDiv) return;
+    
+    // Create live transcript element
+    liveTranscriptElement = document.createElement('div');
+    liveTranscriptElement.id = 'live-transcript';
+    liveTranscriptElement.className = 'live-transcript';
+    liveTranscriptElement.innerHTML = `
+        <div class="live-transcript-content">
+            <div class="live-transcript-indicator">
+                <span class="live-transcript-icon">🎤</span>
+                <span class="live-transcript-text">Listening...</span>
+            </div>
+        </div>
+    `;
+    
+    // Insert at the end of transcript
+    transcriptDiv.appendChild(liveTranscriptElement);
+    
+    // Add CSS styles
+    addLiveTranscriptStyles();
+};
+
+const addLiveTranscriptStyles = () => {
+    // Check if styles already added
+    if (document.getElementById('live-transcript-styles')) return;
+    
+    const style = document.createElement('style');
+    style.id = 'live-transcript-styles';
+    style.textContent = `
+        .live-transcript {
+            position: sticky;
+            bottom: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 16px;
+            margin: 8px 0;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+        
+        .live-transcript.listening {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            animation: pulse 2s infinite;
+        }
+        
+        .live-transcript.interim {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+        
+        .live-transcript.low-confidence {
+            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+            color: #333;
+            border: 2px dashed rgba(255, 193, 7, 0.5);
+        }
+        
+        .live-transcript.final {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+        }
+        
+        .live-transcript.error {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        }
+        
+        .live-transcript.processed {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        
+        .live-transcript.stopped {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        
+        .live-transcript-content {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .live-transcript-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .live-transcript-icon {
+            font-size: 16px;
+            animation: bounce 1s infinite;
+        }
+        
+        .live-transcript-text {
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        .confidence-indicator {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-left: 8px;
+            padding: 2px 6px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        
+        .live-transcript.low-confidence .confidence-indicator {
+            background: rgba(255, 193, 7, 0.3);
+            color: #856404;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-3px); }
+            60% { transform: translateY(-2px); }
+        }
+        
+        .live-transcript.listening .live-transcript-icon {
+            animation: pulse 1.5s infinite;
+        }
+        
+        .live-transcript.interim .live-transcript-icon {
+            animation: bounce 0.8s infinite;
+        }
+    `;
+    
+    document.head.appendChild(style);
+};
 
 const getNextRequiredField = (currentField) => {
     const fieldOrder = [
@@ -159,6 +828,26 @@ const cleanupConnection = () => {
     if (stream) { stream.getTracks().forEach(t => t.stop()); }
     dc = null; pc = null; ws = null; stream = null;
     if (remoteAudio) { remoteAudio.remove(); remoteAudio = null; }
+    
+    // Clean up Web Speech API
+    stopSpeechRecognition();
+    if (speechRecognition) {
+        try {
+            speechRecognition.abort();
+        } catch (e) {
+            console.warn('Error aborting speech recognition:', e);
+        }
+    }
+    speechRecognition = null;
+    isSpeechRecognitionActive = false;
+    currentLiveTranscript = '';
+    
+    // Clean up live transcript UI
+    if (liveTranscriptElement) {
+        liveTranscriptElement.remove();
+        liveTranscriptElement = null;
+    }
+    
     isRecording = false;
     updateButtonStates(isRecording);
 };
@@ -295,6 +984,21 @@ const setupWebSocketAudio = async () => {
     };
     captureSource.connect(captureProcessor);
     captureProcessor.connect(captureAudioContext.destination);
+    
+    // Initialize and start Web Speech API for live transcription
+    if (initializeSpeechRecognition()) {
+        console.log('Web Speech API initialized successfully');
+        // Start speech recognition after a short delay to ensure audio is ready
+        setTimeout(() => {
+            startSpeechRecognition();
+        }, 500);
+    } else {
+        console.log('Web Speech API not available, using server-side transcription only');
+        // Show fallback message to user
+        setTimeout(() => {
+            showWebSpeechAPIFallback();
+        }, 1000);
+    }
 };
 
 const setupWebSocket = async () => {
@@ -1127,6 +1831,30 @@ const clearSessionData = async () => {
             playbackAudioContext = null;
         }
         
+        // Clean up Web Speech API state
+        console.log('Cleaning up Web Speech API state...');
+        stopSpeechRecognition();
+        if (speechRecognition) {
+            try {
+                speechRecognition.abort();
+            } catch (e) {
+                console.error('Error aborting speech recognition:', e);
+            }
+        }
+        speechRecognition = null;
+        isSpeechRecognitionActive = false;
+        currentLiveTranscript = '';
+        
+        // Clean up live transcript UI
+        if (liveTranscriptElement) {
+            try {
+                liveTranscriptElement.remove();
+            } catch (e) {
+                console.error('Error removing live transcript element:', e);
+            }
+            liveTranscriptElement = null;
+        }
+        
         console.log('Session data cleanup completed');
     } catch (error) {
         console.error('Error during session cleanup:', error);
@@ -1340,6 +2068,32 @@ const disconnect = async () => {
     // Reset tool calls cache
     console.log('Clearing tool calls cache...');
     recentToolCalls.clear();
+    
+    // Clean up Web Speech API
+    console.log('Cleaning up Web Speech API...');
+    stopSpeechRecognition();
+    if (speechRecognition) {
+        try {
+            speechRecognition.abort();
+            console.log('Speech recognition aborted');
+        } catch (e) {
+            console.error('Error aborting speech recognition:', e);
+        }
+    }
+    speechRecognition = null;
+    isSpeechRecognitionActive = false;
+    currentLiveTranscript = '';
+    
+    // Clean up live transcript UI
+    if (liveTranscriptElement) {
+        try {
+            liveTranscriptElement.remove();
+            console.log('Live transcript element removed');
+        } catch (e) {
+            console.error('Error removing live transcript element:', e);
+        }
+        liveTranscriptElement = null;
+    }
     
     isDisconnecting = false;
     console.log('Disconnect process completed');
