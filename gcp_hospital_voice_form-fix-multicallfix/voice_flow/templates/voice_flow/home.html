@@ -1,0 +1,315 @@
+{% extends 'voice_flow/base.html' %}
+{% load static %}
+
+{% block title %}AI Hospital Voice System - Leading Healthcare Excellence{% endblock %}
+
+{% block extra_css %}
+<style>
+    .hero-bg {
+        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #06b6d4 100%);
+    }
+    .service-card {
+        transition: all 0.3s ease;
+        border-left: 4px solid transparent;
+    }
+    .service-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        border-left-color: #3b82f6;
+    }
+    .stat-number {
+        background: linear-gradient(135deg, #3b82f6, #06b6d4);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .emergency-banner {
+        background: linear-gradient(135deg, #dc2626, #ef4444);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero Section with Hospital Image -->
+<section class="relative h-screen flex items-center justify-center overflow-hidden">
+    <!-- Hospital Image Background -->
+    <div class="absolute inset-0">
+        <img src="https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&w=2070&q=80" 
+             alt="Modern Hospital Innovation" 
+             class="w-full h-full object-cover"
+             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+        
+        <!-- Fallback gradient background if image doesn't load -->
+        <div class="w-full h-full bg-gradient-to-br from-blue-900 via-blue-700 to-cyan-600" style="display: none;"></div>
+    </div>
+    
+    <!-- Dark overlay for text readability -->
+    <div class="absolute inset-0 bg-black/40"></div>
+    
+    <!-- Content overlay -->
+    <div class="relative z-10 text-center text-white max-w-4xl mx-auto px-6">
+        <h1 class="text-6xl font-bold mb-6 leading-tight">
+            Compassionate Care, Close to Home
+        </h1>
+        <p class="text-2xl mb-8 text-blue-100 leading-relaxed">
+            Expert doctors, advanced treatments, and convenient locations. We’re here for you
+            and your family at every step.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-6 justify-center">
+            <a href="{% url 'voice_flow:voice_flow_conversation' %}" 
+               class="border-2 border-white text-white font-semibold py-4 px-8 rounded-lg hover:bg-white hover:text-blue-600 transition duration-300 text-center text-lg">
+                Start Online Check-In
+            </a>
+        </div>
+    </div>
+    
+</section>
+
+<!-- Care & Services -->
+<section class="py-16 bg-gray-50">
+    <div class="max-w-6xl mx-auto px-6">
+        <div class="text-center mb-12">
+            <h2 class="text-4xl font-bold text-gray-800 mb-4">Care & Services</h2>
+            <p class="text-xl text-gray-600 max-w-3xl mx-auto">
+                Comprehensive care across leading specialties and programs
+            </p>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <!-- Cardiology -->
+            <div class="bg-white rounded-lg p-6 service-card">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center mr-4">
+                        <span class="text-2xl">❤️</span>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-800">Cardiology</h3>
+                </div>
+                <p class="text-gray-600 mb-4">
+                    Advanced heart and vascular care with state-of-the-art diagnostic and treatment options.
+                </p>
+                <a href="/" class="text-blue-600 font-semibold hover:text-blue-800">Learn More →</a>
+            </div>
+
+            <!-- Oncology -->
+            <div class="bg-white rounded-lg p-6 service-card">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
+                        <span class="text-2xl">🦋</span>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-800">Oncology</h3>
+                </div>
+                <p class="text-gray-600 mb-4">
+                    Comprehensive cancer care with innovative treatments and personalized care plans.
+                </p>
+                <a href="/" class="text-blue-600 font-semibold hover:text-blue-800">Learn More →</a>
+            </div>
+
+            <!-- Neurology -->
+            <div class="bg-white rounded-lg p-6 service-card">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+                        <span class="text-2xl">🧠</span>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-800">Neurology</h3>
+                </div>
+                <p class="text-gray-600 mb-4">
+                    Expert care for brain, spine, and nervous system conditions with cutting-edge technology.
+                </p>
+                <a href="/" class="text-blue-600 font-semibold hover:text-blue-800">Learn More →</a>
+            </div>
+
+            <!-- Pediatrics -->
+            <div class="bg-white rounded-lg p-6 service-card">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center mr-4">
+                        <span class="text-2xl">👶</span>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-800">Pediatrics</h3>
+                </div>
+                <p class="text-gray-600 mb-4">
+                    Specialized care for children from infancy through adolescence with family-centered approach.
+                </p>
+                <a href="/" class="text-blue-600 font-semibold hover:text-blue-800">Learn More →</a>
+            </div>
+
+            <!-- Orthopedics -->
+            <div class="bg-white rounded-lg p-6 service-card">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
+                        <span class="text-2xl">🦴</span>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-800">Orthopedics</h3>
+                </div>
+                <p class="text-gray-600 mb-4">
+                    Advanced musculoskeletal care with minimally invasive procedures and joint replacement.
+                </p>
+                <a href="/" class="text-blue-600 font-semibold hover:text-blue-800">Learn More →</a>
+            </div>
+
+            <!-- Emergency Medicine -->
+            <div class="bg-white rounded-lg p-6 service-card">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center mr-4">
+                        <span class="text-2xl">🚑</span>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-800">Emergency Medicine</h3>
+                </div>
+                <p class="text-gray-600 mb-4">
+                    24/7 emergency care with rapid response teams and advanced life support systems.
+                </p>
+                <a href="/" class="text-blue-600 font-semibold hover:text-blue-800">Learn More →</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Hospital Statistics -->
+<section class="py-16 bg-white">
+    <div class="max-w-6xl mx-auto px-6">
+        <div class="text-center mb-12">
+            <h2 class="text-4xl font-bold text-gray-800 mb-4">Excellence in Numbers</h2>
+            <p class="text-xl text-gray-600">Our commitment to providing exceptional healthcare is reflected in our achievements</p>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div class="text-center">
+                <div class="stat-number text-5xl font-bold mb-2">500+</div>
+                <p class="text-gray-600 font-semibold">Board-Certified Physicians</p>
+            </div>
+            <div class="text-center">
+                <div class="stat-number text-5xl font-bold mb-2">1M+</div>
+                <p class="text-gray-600 font-semibold">Patients Served Annually</p>
+            </div>
+            <div class="text-center">
+                <div class="stat-number text-5xl font-bold mb-2">50+</div>
+                <p class="text-gray-600 font-semibold">Medical Specialties</p>
+            </div>
+            <div class="text-center">
+                <div class="stat-number text-5xl font-bold mb-2">98%</div>
+                <p class="text-gray-600 font-semibold">Patient Satisfaction</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Patients & Visitors and Online Services -->
+<section class="py-16 bg-blue-50">
+    <div class="max-w-6xl mx-auto px-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
+            <div>
+                <h2 class="text-4xl font-bold text-gray-800 mb-6">Patients & Visitors</h2>
+                <p class="text-lg text-gray-600 mb-6">
+                    Everything you need to plan your visit and manage your care.
+                </p>
+                <div class="space-y-4">
+                    <div class="flex items-center">
+                        <span class="w-2 h-2 bg-blue-600 rounded-full mr-3"></span>
+                        <span class="text-gray-700">Visiting hours and guidelines</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="w-2 h-2 bg-blue-600 rounded-full mr-3"></span>
+                        <span class="text-gray-700">Parking, maps, and directions</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="w-2 h-2 bg-blue-600 rounded-full mr-3"></span>
+                        <span class="text-gray-700">Billing and insurance information</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="w-2 h-2 bg-blue-600 rounded-full mr-3"></span>
+                        <span class="text-gray-700">Medical records and forms</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="w-2 h-2 bg-blue-600 rounded-full mr-3"></span>
+                        <span class="text-gray-700">Preparing for your visit</span>
+                    </div>
+                </div>
+                <a href="/" class="inline-block mt-6 bg-blue-600 text-white font-semibold py-3 px-8 rounded-lg hover:bg-blue-700 transition duration-300">
+                    View Patient & Visitor Guide
+                </a>
+            </div>
+            <div class="bg-white rounded-lg p-8 shadow-lg">
+                <h3 class="text-2xl font-bold text-gray-800 mb-6">Online Services</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <a href="/" class="block w-full text-center border border-gray-200 rounded-lg py-4 px-4 font-semibold text-gray-700 hover:border-blue-600 hover:text-blue-600 transition">Patient Portal</a>
+                    <a href="/" class="block w-full text-center border border-gray-200 rounded-lg py-4 px-4 font-semibold text-gray-700 hover:border-blue-600 hover:text-blue-600 transition">Pay a Bill</a>
+                    <a href="/" class="block w-full text-center border border-gray-200 rounded-lg py-4 px-4 font-semibold text-gray-700 hover:border-blue-600 hover:text-blue-600 transition">Find a Location</a>
+                    <a href="{% url 'voice_flow:voice_flow_conversation' %}" class="block w-full text-center border border-gray-200 rounded-lg py-4 px-4 font-semibold text-gray-700 hover:border-blue-600 hover:text-blue-600 transition">Virtual Visit</a>
+                    <a href="{% url 'voice_flow:voice_flow_conversation' %}" class="block w-full text-center border border-gray-200 rounded-lg py-4 px-4 font-semibold text-gray-700 hover:border-blue-600 hover:text-blue-600 transition sm:col-span-2">Book an Appointment</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Patient Stories -->
+<section class="py-16 bg-white">
+    <div class="max-w-6xl mx-auto px-6">
+        <div class="text-center mb-12">
+            <h2 class="text-4xl font-bold text-gray-800 mb-4">Patient Success Stories</h2>
+            <p class="text-xl text-gray-600">Real stories from patients whose lives we've touched</p>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="bg-gray-50 rounded-lg p-6">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-4">
+                        <span class="text-xl">👨‍🦳</span>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">John M.</h4>
+                        <p class="text-sm text-gray-600">Cardiac Surgery Patient</p>
+                    </div>
+                </div>
+                <p class="text-gray-600 italic">
+                    "The care I received was exceptional. The team's expertise and compassion 
+                    made my recovery smooth and successful."
+                </p>
+            </div>
+            
+            <div class="bg-gray-50 rounded-lg p-6">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center mr-4">
+                        <span class="text-xl">👩</span>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">Sarah L.</h4>
+                        <p class="text-sm text-gray-600">Cancer Treatment Patient</p>
+                    </div>
+                </div>
+                <p class="text-gray-600 italic">
+                    "The innovative treatments and supportive care team gave me hope and 
+                    helped me through my cancer journey."
+                </p>
+            </div>
+            
+            <div class="bg-gray-50 rounded-lg p-6">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-4">
+                        <span class="text-xl">👶</span>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">Emma's Family</h4>
+                        <p class="text-sm text-gray-600">Pediatric Care</p>
+                    </div>
+                </div>
+                <p class="text-gray-600 italic">
+                    "The pediatric team treated our daughter with such care and expertise. 
+                    We're forever grateful for their dedication."
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Call to Action -->
+<section class="py-16 bg-gradient-to-r from-blue-600 to-cyan-600 text-white">
+    <div class="max-w-4xl mx-auto px-6 text-center">
+        <h2 class="text-4xl font-bold mb-6">How can we help you today?</h2>
+        <p class="text-xl mb-8 text-blue-100">Get the care you need with easy online tools</p>
+        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+            <a href="{% url 'voice_flow:voice_flow_conversation' %}" class="bg-white text-blue-600 font-semibold py-4 px-8 rounded-lg hover:bg-gray-100 transition duration-300">Schedule an Appointment</a>
+            <a href="/" class="border-2 border-white text-white font-semibold py-4 px-8 rounded-lg hover:bg-white hover:text-blue-600 transition duration-300">Find a Doctor</a>
+        </div>
+    </div>
+</section>
+{% endblock %}

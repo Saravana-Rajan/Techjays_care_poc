@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Hospital Name{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  {% block extra_css %}{% endblock %}
+</head>
+<body class="min-h-screen flex flex-col bg-gray-50">
+
+  <!-- Header / Nav -->
+  <header class="bg-white shadow sticky top-0 z-50">
+    <div class="container mx-auto px-6 py-4 flex flex-col md:flex-row items-center justify-between">
+      <!-- Logo left aligned -->
+      <a href="/" class="text-2xl font-bold text-blue-700 flex items-center mb-3 md:mb-0">
+        Techjays Care
+      </a>
+      <!-- Navigation centered -->
+      <nav class="flex justify-center space-x-4">
+        <a href="/" class="hover:text-blue-900">Home</a>
+        <a href="{% url 'voice_flow:appointments' %}" class="hover:text-blue-900">Appointments</a>
+        <a href="{% url 'voice_flow:voice_flow_conversation' %}" class="hover:text-blue-900">Book Appointment</a>
+      </nav>
+      <!-- Empty div to balance the layout -->
+      <div class="hidden md:block w-32"></div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 container mx-auto px-6 py-8 flex flex-col min-h-0">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-gray-800 text-gray-200 text-sm text-center py-3">
+    © 2025 Techjays Care. All rights reserved. · 
+    <a href="/" class="hover:text-white">Privacy Policy</a> · 
+    <a href="/" class="hover:text-white">Terms of Use</a>
+  </footer>  
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

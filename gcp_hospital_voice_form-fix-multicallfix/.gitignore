@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+*.pyo
+*.pyd
+*.pkl
+*.log
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+.env
+env.bak/
+venv.bak/
+
+# Django stuff
+*.sqlite3
+db.sqlite3
+media/
+staticfiles/
+static_root/
+
+# Migrations (optional, ignore if you don’t want migration history in git)
+# */migrations/*
+# !*/migrations/__init__.py
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python tooling
+.coverage
+.tox/
+pytest_cache/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+.pyre/
+
+# Local environment variables
+*.env
+.env.*
+
+# Build & dist
+build/
+dist/
+*.egg-info/
