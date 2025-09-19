@@ -233,59 +233,6 @@ export const clearGeneratedOrOptionContentDisplayPanel = () => {
     if (defaultState) defaultState.classList.remove('hidden');
 };
 
-// Live transcription display
-export const createLiveTranscriptionElement = () => {
-    const { transcriptDiv } = getTranscriptElements();
-    if (!transcriptDiv) return;
-    
-    // Check if live transcription element already exists
-    let liveTranscriptionEl = document.getElementById('live-transcription');
-    if (!liveTranscriptionEl) {
-        liveTranscriptionEl = document.createElement('div');
-        liveTranscriptionEl.id = 'live-transcription';
-        liveTranscriptionEl.className = 'live-transcription';
-        liveTranscriptionEl.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(59, 130, 246, 0.95);
-            color: white;
-            padding: 12px 20px;
-            border-radius: 25px;
-            font-size: 16px;
-            font-weight: 500;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            max-width: 80%;
-            text-align: center;
-            z-index: 1000;
-            display: none;
-            transition: all 0.3s ease;
-            word-wrap: break-word;
-        `;
-        
-        // Add pulsing animation for interim results
-        const style = document.createElement('style');
-        style.textContent = `
-            .live-transcription.interim {
-                animation: pulse 1.5s ease-in-out infinite;
-            }
-            @keyframes pulse {
-                0% { opacity: 0.8; }
-                50% { opacity: 1; }
-                100% { opacity: 0.8; }
-            }
-        `;
-        document.head.appendChild(style);
-        
-        document.body.appendChild(liveTranscriptionEl);
-    }
-    
-    return liveTranscriptionEl;
-};
-
 // Transcript message rendering
 export const appendMessage = (role, text) => {
     const { transcriptDiv } = getTranscriptElements();

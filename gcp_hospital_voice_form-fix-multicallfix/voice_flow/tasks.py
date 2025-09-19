@@ -3,8 +3,9 @@ import logging
 from rest_framework import serializers
 
 from celery import shared_task
-from voice_flow.utils import (
-    format_serializer_errors
+from hiring_manager_convo.utils import (
+    generate_user_behavioral_summary, 
+    correct_job_data_with_llm
 )
 
 logger = logging.getLogger(__name__)

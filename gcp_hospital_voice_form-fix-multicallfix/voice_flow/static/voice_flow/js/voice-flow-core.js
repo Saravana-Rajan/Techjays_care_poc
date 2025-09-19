@@ -54,13 +54,6 @@ let connectionTimeoutId = null;
 let lastProcessedUserResponseTimestamp = 0;
 let recentToolCalls = new Map();
 
-// Live transcription state
-let speechRecognition = null;
-let isLiveTranscribing = false;
-let currentLiveTranscript = '';
-let liveTranscriptElement = null;
-let speechRecognitionSupported = false;
-
 const USER_RESPONSE_DEDUP_THRESHOLD_MS = 2000;
 const CONVERSATION_TIMEOUT_MS = 30000;
 const MAX_RECONNECT_ATTEMPTS = 100;
@@ -112,155 +105,6 @@ const getNextRequiredField = (currentField) => {
     return 'confirmation';
 };
 
-// Live transcription functions
-const initializeSpeechRecognition = () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        console.warn('Speech recognition not supported in this browser');
-        speechRecognitionSupported = false;
-        return false;
-    }
-    
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    speechRecognition = new SpeechRecognition();
-    
-    // Configure for optimal live transcription
-    speechRecognition.continuous = true;
-    speechRecognition.interimResults = true;
-    speechRecognition.lang = 'en-US';
-    speechRecognition.maxAlternatives = 1;
-    
-    speechRecognition.onstart = () => {
-        console.log('Live transcription started');
-        isLiveTranscribing = true;
-        updateLiveTranscriptIndicator(true);
-    };
-    
-    speechRecognition.onresult = (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-                finalTranscript += transcript;
-            } else {
-                interimTranscript += transcript;
-            }
-        }
-        
-        // Update live transcript display
-        currentLiveTranscript = finalTranscript + interimTranscript;
-        updateLiveTranscriptDisplay(currentLiveTranscript, interimTranscript.length > 0);
-    };
-    
-    speechRecognition.onerror = (event) => {
-        console.warn('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed') {
-            console.warn('Microphone access denied for speech recognition');
-        }
-    };
-    
-    speechRecognition.onend = () => {
-        console.log('Live transcription ended');
-        isLiveTranscribing = false;
-        updateLiveTranscriptIndicator(false);
-        // Restart if we're still recording
-        if (isRecording && !isManualDisconnect) {
-            setTimeout(() => {
-                if (isRecording && speechRecognition) {
-                    try {
-                        speechRecognition.start();
-                    } catch (e) {
-                        console.warn('Failed to restart speech recognition:', e);
-                    }
-                }
-            }, 100);
-        }
-    };
-    
-    speechRecognitionSupported = true;
-    return true;
-};
-
-const startLiveTranscription = () => {
-    if (!speechRecognitionSupported || !speechRecognition) {
-        return false;
-    }
-    
-    try {
-        speechRecognition.start();
-        return true;
-    } catch (e) {
-        console.warn('Failed to start live transcription:', e);
-        return false;
-    }
-};
-
-const stopLiveTranscription = () => {
-    if (speechRecognition && isLiveTranscribing) {
-        try {
-            speechRecognition.stop();
-        } catch (e) {
-            console.warn('Error stopping live transcription:', e);
-        }
-    }
-    isLiveTranscribing = false;
-    updateLiveTranscriptIndicator(false);
-};
-
-const updateLiveTranscriptDisplay = (text, isInterim = false) => {
-    if (!liveTranscriptElement) {
-        // Create live transcript element if it doesn't exist
-        const transcriptDiv = document.getElementById('transcript');
-        if (transcriptDiv) {
-            liveTranscriptElement = document.createElement('div');
-            liveTranscriptElement.id = 'live-transcript';
-            liveTranscriptElement.className = 'p-4 my-3 rounded-lg shadow-sm border bg-blue-50 border-blue-200 text-left break-words overflow-hidden';
-            liveTranscriptElement.innerHTML = '<div class="text-xs text-blue-600 font-medium mb-1">🎤 Live Transcription:</div><div id="live-transcript-text" class="text-sm text-gray-800"></div>';
-            transcriptDiv.appendChild(liveTranscriptElement);
-        }
-    }
-    
-    if (liveTranscriptElement && text.trim()) {
-        const textElement = document.getElementById('live-transcript-text');
-        if (textElement) {
-            textElement.textContent = text;
-            if (isInterim) {
-                textElement.style.fontStyle = 'italic';
-                textElement.style.opacity = '0.7';
-            } else {
-                textElement.style.fontStyle = 'normal';
-                textElement.style.opacity = '1';
-            }
-        }
-        ensureTranscriptScroll();
-    } else if (liveTranscriptElement && !text.trim()) {
-        // Hide the element when there's no text
-        liveTranscriptElement.style.display = 'none';
-    }
-};
-
-const updateLiveTranscriptIndicator = (isActive) => {
-    const indicator = document.getElementById('live-transcript-indicator');
-    if (indicator) {
-        if (isActive) {
-            indicator.textContent = '🎤 Live';
-            indicator.className = 'text-green-600 text-xs font-medium';
-        } else {
-            indicator.textContent = '🎤 Off';
-            indicator.className = 'text-gray-500 text-xs font-medium';
-        }
-    }
-};
-
-const clearLiveTranscript = () => {
-    if (liveTranscriptElement) {
-        liveTranscriptElement.remove();
-        liveTranscriptElement = null;
-    }
-    currentLiveTranscript = '';
-};
-
 const saveSessionToLocalStorage = () => {
     const sessionData = {
         userData,
@@ -294,13 +138,13 @@ const clearConversationTimeout = () => {
 
 const resetConversationTimeout = () => {
     clearConversationTimeout();
-    conversationTimeout = setTimeout(() => {
-        if (isRecording && !isAssistantOrUserSpeaking) {
-            console.log('Conversation timeout - AI may be stuck');
-            const timeoutMessage = `(System: The conversation seems to have paused. Please ask the user for clarification in English, then continue following the given instructions.)`;
-            formatAndSendSystemMessageText(timeoutMessage);
-        }
-    }, CONVERSATION_TIMEOUT_MS);
+    // conversationTimeout = setTimeout(() => {
+    //     if (isRecording && !isAssistantOrUserSpeaking) {
+    //         console.log('Conversation timeout - AI may be stuck');
+    //         const timeoutMessage = `(System: The conversation seems to have paused. Please ask the user for clarification in English, then continue following the given instructions.)`;
+    //         formatAndSendSystemMessageText(timeoutMessage);
+    //     }
+    // }, CONVERSATION_TIMEOUT_MS);
 };
 
 const cancelScheduledReconnection = () => {
@@ -317,10 +161,6 @@ const cleanupConnection = () => {
     if (remoteAudio) { remoteAudio.remove(); remoteAudio = null; }
     isRecording = false;
     updateButtonStates(isRecording);
-    
-    // Stop live transcription
-    stopLiveTranscription();
-    clearLiveTranscript();
 };
 
 const forceCleanupConnection = async () => {
@@ -403,7 +243,7 @@ const handleConnectionFailure = () => {
 
 const setupWebSocketAudio = async () => {
     try {
-        // Enhanced audio constraints for native audio dialog with minimal latency
+        // Enhanced audio constraints for native audio dialog
         stream = await navigator.mediaDevices.getUserMedia({ 
             audio: { 
                 sampleRate: { ideal: 16000, min: 8000, max: 48000 },
@@ -411,13 +251,8 @@ const setupWebSocketAudio = async () => {
                 echoCancellation: true, 
                 noiseSuppression: true,
                 autoGainControl: true,
-                latency: { ideal: 0.005, max: 0.01 }, // Ultra-low latency for real-time
-                sampleSize: 16,
-                googEchoCancellation: true,
-                googAutoGainControl: true,
-                googNoiseSuppression: true,
-                googHighpassFilter: true,
-                googTypingNoiseDetection: true
+                latency: { ideal: 0.01 }, // Low latency for real-time
+                sampleSize: 16
             } 
         });
     } catch (e) {
@@ -438,7 +273,7 @@ const setupWebSocketAudio = async () => {
     
     [track] = stream.getAudioTracks();
     
-    // Optimize audio context for native audio dialog with ultra-low latency
+    // Optimize audio context for native audio dialog
     captureAudioContext = new (window.AudioContext || window.webkitAudioContext)({ 
         sampleRate: 48000,
         latencyHint: 'interactive' // Low latency for real-time processing
@@ -460,14 +295,6 @@ const setupWebSocketAudio = async () => {
     };
     captureSource.connect(captureProcessor);
     captureProcessor.connect(captureAudioContext.destination);
-    
-    // Initialize and start live transcription
-    if (initializeSpeechRecognition()) {
-        console.log('Live transcription initialized successfully');
-        startLiveTranscription();
-    } else {
-        console.warn('Live transcription not available - continuing without it');
-    }
 };
 
 const setupWebSocket = async () => {
@@ -548,10 +375,22 @@ const setupWebSocket = async () => {
                     }
                 
                 } else if (message.type === 'text' && message.text) {
-                    // Display text message without TTS fallback
+                    // Only speak non-system messages
+                    if (!message.text.startsWith('SYSTEM:') && !message.text.startsWith('ERROR:') && !message.text.startsWith('WARNING:')) {
+                    try {
+                        const utter = new SpeechSynthesisUtterance(message.text);
+                        utter.rate = 0.95; // slightly slower for clarity
+                        utter.pitch = 1.0;
+                        utter.lang = 'en-US';
+                        window.speechSynthesis.cancel();
+                        window.speechSynthesis.speak(utter);
+                    } catch (e) {
+                        console.warn('TTS failed', e);
+                    }
                     const finalText = updateAssistantMessage(message.text, true);
                     addMessageToConversation('assistant', message.text);
                     resetConversationTimeout();
+                    }
                 } else if (message.type === 'turn_complete') {
                     // Handle turn complete
                     hideThinkingIndicator();
@@ -1501,11 +1340,6 @@ const disconnect = async () => {
     // Reset tool calls cache
     console.log('Clearing tool calls cache...');
     recentToolCalls.clear();
-    
-    // Stop live transcription
-    console.log('Stopping live transcription...');
-    stopLiveTranscription();
-    clearLiveTranscript();
     
     isDisconnecting = false;
     console.log('Disconnect process completed');
